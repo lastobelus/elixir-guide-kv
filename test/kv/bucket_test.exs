@@ -4,11 +4,24 @@ defmodule KV.BucketTest do
   """
   use ExUnit.Case, async: true
 
-  test "stores values by key" do
+  setup do
     {:ok, bucket} = KV.Bucket.start_link([])
+    %{bucket: bucket}
+  end
+
+  test "stores values by key", %{bucket: bucket} do
     assert KV.Bucket.get(bucket, "milk") == nil
 
-    KV.Bucket.put(bucket, "milk", 3)
-    assert KV.Bucket.get(bucket, "milk") == 3
+    KV.Bucket.put(bucket, "milk", "test-storing-value")
+    assert KV.Bucket.get(bucket, "milk") == "test-storing-value"
+  end
+
+  test "deletes a value by key", %{bucket: bucket} do
+    KV.Bucket.put(bucket, "milk", "test-deleting-value")
+
+    assert KV.Bucket.delete(bucket, "milk") == "test-deleting-value"
+    assert KV.Bucket.get(bucket, "milk") == nil
+
+    assert KV.Bucket.delete(bucket, "nonexistent") == nil
   end
 end

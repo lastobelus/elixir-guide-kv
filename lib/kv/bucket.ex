@@ -6,10 +6,11 @@ defmodule KV.Bucket do
 
   @type bucket :: atom | pid | {atom, any} | {:via, atom, any}
 
+  @spec start_link(map()) :: {:error, any} | {:ok, bucket()}
   @doc """
   Starts a new bucket.
+  A start_link/1 function that accepts options is a standard convention
   """
-  @spec start_link(map()) :: {:error, any} | {:ok, bucket()}
   def start_link(_opts) do
     Agent.start_link(fn -> %{} end)
   end
@@ -22,11 +23,19 @@ defmodule KV.Bucket do
     Agent.get(bucket, &Map.get(&1, key))
   end
 
+  @spec put(bucket(), atom, any) :: :ok
   @doc """
   Puts the `value` for the given `key` in the `bucket`.
   """
-  @spec put(bucket(), atom, any) :: :ok
   def put(bucket, key, value) do
     Agent.update(bucket, &Map.put(&1, key, value))
+  end
+
+  @spec delete(bucket(), atom) :: any
+  @doc """
+  Deletes `key` from the bucket, returning it's value if it existed
+  """
+  def delete(bucket, key) do
+    Agent.get_and_update(bucket, &Map.pop(&1, key))
   end
 end
