@@ -6,7 +6,7 @@ defmodule KV.Bucket do
 
   @type bucket :: atom | pid | {atom, any} | {:via, atom, any}
 
-  @spec start_link(map()) :: {:error, any} | {:ok, bucket()}
+  @spec start_link(any) :: {:error, any} | {:ok, bucket()}
   @doc """
   Starts a new bucket.
   A start_link/1 function that accepts options is a standard convention
