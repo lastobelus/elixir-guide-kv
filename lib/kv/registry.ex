@@ -4,6 +4,8 @@ defmodule KV.Registry do
   """
   use GenServer
 
+  @type registry :: atom | pid | {atom, any} | {:via, atom, any}
+
   ## Client API
 
   @spec start_link(any) :: :ignore | {:error, any} | {:ok, pid}
@@ -14,7 +16,7 @@ defmodule KV.Registry do
     GenServer.start_link(__MODULE__, :ok, opts)
   end
 
-  @spec lookup(KV.Bucket.bucket(), String.t()) :: :error | {:ok, pid}
+  @spec lookup(registry(), String.t()) :: :error | {:ok, pid}
   @doc """
     Looks up the bucket pid for `name` stored in `server`.
 
@@ -24,7 +26,7 @@ defmodule KV.Registry do
     GenServer.call(server, {:lookup, name})
   end
 
-  @spec create(KV.Bucket.bucket(), String.t()) :: :ok
+  @spec create(registry(), String.t()) :: :ok
   @doc """
     Ensures there is a bucket associated with the given 'name' in 'server'.
   """
@@ -36,23 +38,51 @@ defmodule KV.Registry do
 
   @impl true
   def init(:ok) do
-    {:ok, %{}}
+    names = %{}
+    refs = %{}
+    {:ok, {names, refs}}
   end
 
   @impl true
-  def handle_call({:lookup, name}, _from, names) do
-    {:reply, Map.fetch(names, name), names}
+  @doc """
+  Handle lookup a bucket by name
+  """
+  def handle_call({:lookup, name}, _from, state) do
+    {names, _} = state
+    {:reply, Map.fetch(names, name), state}
   end
 
   @impl true
   # for illustration, in a real app this would probably also be synchronous
-  def handle_cast({:create, name}, names) do
+  @doc """
+  Handle creating a bucket by name
+  """
+  def handle_cast({:create, name}, {names, refs}) do
     if Map.has_key?(names, name) do
-      {:noreply, names}
+      {:noreply, {names, refs}}
     else
       {:ok, bucket} = KV.Bucket.start_link([])
-      {:noreply, Map.put(names, name, bucket)}
+      ref = Process.monitor(bucket)
+      refs = Map.put(refs, ref, name)
+      names = Map.put(names, name, bucket)
+      {:noreply, {names, refs}}
     end
+  end
+
+  @impl true
+  @doc """
+    Handle monitoring messages from bucket
+  """
+  def handle_info({:DOWN, ref, :process, _pid, _reason}, {names, refs}) do
+    {name, refs} = Map.pop(refs, ref)
+    names = Map.delete(names, name)
+    {:noreply, {names, refs}}
+  end
+
+  @impl true
+  # Handle other monitoring messages we don't care about at present
+  def handle_info(_msg, state) do
+    {:noreply, state}
   end
 
   # endregion [callbacks]
