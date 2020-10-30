@@ -19,7 +19,10 @@ defmodule KV.Supervisor do
   """
   def init(:ok) do
     children = [
-      {KV.Registry, name: KV.Registry}
+      {KV.Registry, name: KV.Registry},
+      # Using a DynamicSupervisor for KV.Bucket will ensure that if a bucket crashes,
+      # it does not crash the registry
+      {DynamicSupervisor, name: KV.BucketSupervisor, strategy: :one_for_one}
     ]
 
     # one-for-one means that if a child dies, it will be the only one restarted

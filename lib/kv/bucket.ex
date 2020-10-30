@@ -2,7 +2,10 @@ defmodule KV.Bucket do
   @moduledoc """
   Implements an instance of a key-value store using Agent
   """
-  use Agent
+  # we use the `restart: :temporary` option to ensure that if a bucket
+  # crashes, KV.BucketSupervisor does not start a new one as it would be
+  # orphaned
+  use Agent, restart: :temporary
 
   @type bucket :: atom | pid | {atom, any} | {:via, atom, any}
 
