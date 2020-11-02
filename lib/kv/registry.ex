@@ -10,20 +10,28 @@ defmodule KV.Registry do
 
   @spec start_link(any) :: :ignore | {:error, any} | {:ok, pid}
   @doc """
-  Starts the registry
+  Starts the registry with the given options.
+
+  `:name` is always required
   """
   def start_link(opts) do
-    GenServer.start_link(__MODULE__, :ok, opts)
+    name = Keyword.fetch!(opts, :name)
+    GenServer.start_link(__MODULE__, name, opts)
   end
 
   @spec lookup(registry(), String.t()) :: :error | {:ok, pid}
   @doc """
     Looks up the bucket pid for `name` stored in `server`.
 
+    Server references are cached in an ETS table
+
     Returns `{:ok, pid}` if the bucket exists, :error otherwise
   """
   def lookup(server, name) do
-    GenServer.call(server, {:lookup, name})
+    case :ets.lookup(server, name) do
+      [{^name, pid}] -> {:ok, pid}
+      [] -> :error
+    end
   end
 
   @spec create(registry(), String.t()) :: :ok
@@ -31,43 +39,34 @@ defmodule KV.Registry do
     Ensures there is a bucket associated with the given 'name' in 'server'.
   """
   def create(server, name) do
-    GenServer.cast(server, {:create, name})
+    GenServer.call(server, {:create, name})
   end
 
   # region [ callbacks ]
 
   @impl true
-  def init(:ok) do
-    names = %{}
+  def init(table_name) do
+    names = :ets.new(table_name, [:named_table, read_concurrency: true])
     refs = %{}
     {:ok, {names, refs}}
   end
 
   @impl true
   @doc """
-  Handle lookup a bucket by name
-  """
-  def handle_call({:lookup, name}, _from, state) do
-    {names, _} = state
-    {:reply, Map.fetch(names, name), state}
-  end
-
-  @impl true
-  # for illustration, in a real app this would probably also be synchronous
-  @doc """
   Handle creating a bucket by name
   """
-  def handle_cast({:create, name}, {names, refs}) do
-    if Map.has_key?(names, name) do
-      {:noreply, {names, refs}}
-    else
-      # by using the DynamicSupervisor KV.BucketSupervisor (configured in KV.Supervisor.init)
-      # instead of start_link, we ensure that a crashing bucket does not bring down the registry
-      {:ok, pid} = DynamicSupervisor.start_child(KV.BucketSupervisor, KV.Bucket)
-      ref = Process.monitor(pid)
-      refs = Map.put(refs, ref, name)
-      names = Map.put(names, name, pid)
-      {:noreply, {names, refs}}
+  def handle_call({:create, name}, _from, {names, refs}) do
+    case lookup(names, name) do
+      {:ok, pid} ->
+        # third argument (`{names, refs}` is the resultant state)
+        {:reply, pid, {names, refs}}
+
+      :error ->
+        {:ok, pid} = DynamicSupervisor.start_child(KV.BucketSupervisor, KV.Bucket)
+        ref = Process.monitor(pid)
+        refs = Map.put(refs, ref, name)
+        :ets.insert(names, {name, pid})
+        {:reply, pid, {names, refs}}
     end
   end
 
@@ -77,7 +76,7 @@ defmodule KV.Registry do
   """
   def handle_info({:DOWN, ref, :process, _pid, _reason}, {names, refs}) do
     {name, refs} = Map.pop(refs, ref)
-    names = Map.delete(names, name)
+    :ets.delete(names, name)
     {:noreply, {names, refs}}
   end
 

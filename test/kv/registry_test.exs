@@ -4,11 +4,11 @@ defmodule KV.RegistryTest do
   """
   use ExUnit.Case, async: true
 
-  setup do
+  setup context do
     # start_supervised! is an EXUnit helper that guarantees the process
     # will be properly stopped & started between test runs
-    registry = start_supervised!(KV.Registry)
-    %{registry: registry}
+    _ = start_supervised!({KV.Registry, name: context.test})
+    %{registry: context.test}
   end
 
   test "spawns buckets", %{registry: registry} do
@@ -27,6 +27,7 @@ defmodule KV.RegistryTest do
 
     Agent.stop(bucket)
 
+    ensure_stopped(registry)
     assert KV.Registry.lookup(registry, "shopping") == :error
   end
 
@@ -36,6 +37,15 @@ defmodule KV.RegistryTest do
 
     # Stop the bucket with non-normal reason
     Agent.stop(bucket, :shutdown)
+
+    ensure_stopped(registry)
     assert KV.Registry.lookup(registry, "shopping") == :error
+  end
+
+  defp ensure_stopped(registry) do
+    # Since lookup does not talk to the server, we need to send (any)
+    # synchronous message to the server to ensure the `:DOWN` message
+    # from the bucket dying has been processed.
+    _ = KV.Registry.create(registry, "bogus")
   end
 end
